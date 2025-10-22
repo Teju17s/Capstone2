@@ -1,0 +1,12 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Small project-specific overrides */
+.container {
+    @apply max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-md;
+}
+
+.btn {
+    @apply inline-flex items-center justify-center px-4 py-2 rounded-md;
+}

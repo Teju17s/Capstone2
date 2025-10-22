@@ -1,0 +1,44 @@
+# VS Code workspace settings
+.vscode/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.idea/
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Log files
+*.log
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# Backup files
+*.bak
+*.backup
+
+# Package manager lock files (if using different managers)
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Application configuration (sensitive data)
+backend/src/main/resources/application.properties
+backend/src/main/resources/application-*.properties
