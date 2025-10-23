@@ -2,30 +2,38 @@
   <div class="fd-list">
     <h2 class="heading">Your Fixed Deposits</h2>
 
+    <!-- Loading / Empty States -->
     <div v-if="loading" class="loading">Loading FDs...</div>
     <div v-else-if="fds.length === 0" class="empty">No FDs found.</div>
 
+    <!-- FD Cards -->
     <div
       v-for="fd in fds"
       :key="fd.fixedDepositId"
-      :id="'fd-' + fd.fixedDepositId"
+      :id="`fd-${fd.fixedDepositId}`"
+      class="fd-card"
+      :class="{ expanded: isExpanded(fd.fixedDepositId) }"
       @click="toggle(fd.fixedDepositId)"
-      :class="['fd-card', { expanded: isExpanded(fd.fixedDepositId) }]"
     >
       <div class="fd-summary">
         <div class="fd-info">
           <div class="scheme-name">{{ fd.scheme || '—' }}</div>
           <div class="amount">₹{{ formatCurrency(fd.amount) }}</div>
-          <div class="tenure">{{ fd.tenureMonths }} months • {{ fd.interestRate }}% p.a.</div>
+          <div class="tenure">
+            {{ fd.tenureMonths }} months • {{ fd.interestRate }}% p.a.
+          </div>
         </div>
 
         <div class="fd-status">
-          <div class="status" :style="statusStyle(fd.status)">{{ fd.status }}</div>
+          <div class="status" :style="statusStyle(fd.status)">
+            {{ fd.status }}
+          </div>
           <div class="maturity-label">Matures on</div>
           <div class="maturity-date">{{ formatDate(fd.maturityDate) }}</div>
         </div>
       </div>
 
+      <!-- Expand Details -->
       <transition name="fade">
         <div v-if="isExpanded(fd.fixedDepositId)" class="fd-details">
           <div class="detail-grid">
@@ -37,9 +45,25 @@
             <div><strong>Tenure:</strong> {{ fd.tenureMonths }} months</div>
             <div><strong>Start Date:</strong> {{ formatDate(fd.startDate) }}</div>
             <div><strong>Maturity Date:</strong> {{ formatDate(fd.maturityDate) }}</div>
-            <div><strong>Accrued Interest:</strong> ₹{{ formatCurrency(accruedInterest(fd)) }}</div>
-            <div><strong>Maturity Value:</strong> ₹{{ formatCurrency(maturityValue(fd)) }}</div>
+            <div>
+              <strong>Accrued Interest:</strong>
+              ₹{{ formatCurrency(fd.accruedInterest || 0) }}
+            </div>
+            <div>
+              <strong>Maturity Value:</strong>
+              ₹{{ formatCurrency(fd.maturityValue || (fd.amount + (fd.accruedInterest || 0))) }}
+            </div>
             <div><strong>Status:</strong> {{ fd.status }}</div>
+          </div>
+
+          <div class="action-container">
+            <button
+              v-if="fd.status === 'ACTIVE'"
+              class="break-btn"
+              @click.stop="goToBreakFd(fd.fixedDepositId)"
+            >
+              Break FD
+            </button>
           </div>
         </div>
       </transition>
@@ -47,98 +71,99 @@
   </div>
 </template>
 
-<script>
-import { ref, onMounted, watch } from 'vue';
-import { useRoute } from 'vue-router';
-import { getFds } from '@/config/api.js';
-import logger from '@/utils/logger.js';
+<script setup>
+import { ref, onMounted, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import { getFds } from '@/config/api.js'
+import logger from '@/utils/logger.js'
 
-export default {
-  name: 'FDList',
-  setup() {
-    const route = useRoute();
-    const fds = ref([]);
-    const loading = ref(true);
-    const expandedId = ref(null);
+// --- Reactive State ---
+const fds = ref([])
+const loading = ref(true)
+const expandedId = ref(null)
 
-    const loadFds = async () => {
-      loading.value = true;
-      try {
-        const res = await getFds(1);
-        fds.value = Array.isArray(res.data) ? res.data : Array.isArray(res) ? res : [];
-        logger.info('Fetched FDs', { count: fds.value.length });
-      } catch (err) {
-        logger.error('Failed to fetch FDs', err);
-        fds.value = [];
-      } finally {
-        loading.value = false;
-      }
-    };
+// --- Router ---
+const route = useRoute()
+const router = useRouter()
 
-    const toggle = (id) => {
-      expandedId.value = expandedId.value === id ? null : id;
-    };
-
-    const isExpanded = (id) => expandedId.value === id;
-
-    const formatCurrency = (value) =>
-      Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 });
-
-    const formatDate = (d) => (d ? new Date(d).toLocaleDateString('en-GB') : '—');
-
-    const accruedInterest = (fd) => {
-      const principal = Number(fd.amount || 0);
-      const rate = Number(fd.interestRate || 0) / 100;
-      const start = new Date(fd.startDate);
-      const today = new Date();
-      const end = new Date(fd.maturityDate);
-      const effectiveDate = today < end ? today : end;
-      const days = Math.max(0, Math.floor((effectiveDate - start) / (1000 * 60 * 60 * 24)));
-      return Math.round(principal * rate * (days / 365));
-    };
-
-    const maturityValue = (fd) => Math.round(Number(fd.amount || 0) + accruedInterest(fd));
-
-    const statusStyle = (status) => {
-      const base = { padding: '6px 10px', borderRadius: '14px', fontSize: '12px', fontWeight: 700 };
-      if (status === 'ACTIVE') return { ...base, background: '#e8f5e9', color: '#2e7d32' };
-      if (status === 'MATURED') return { ...base, background: '#fff3e0', color: '#ef6c00' };
-      if (status === 'BROKEN') return { ...base, background: '#ffebee', color: '#c62828' };
-      return { ...base, background: '#f3f4f6', color: '#374151' };
-    };
-
-    onMounted(loadFds);
-
-    watch(
-      () => route.query.newFdId,
-      (id) => {
-        if (id) {
-          loadFds().then(() => {
-            expandedId.value = Number(id);
-            setTimeout(() => {
-              const el = document.getElementById('fd-' + id);
-              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-            }, 100);
-          });
-        }
-      },
-      { immediate: true }
-    );
-
-    return {
-      fds,
-      loading,
-      expandedId,
-      toggle,
-      isExpanded,
-      formatCurrency,
-      formatDate,
-      accruedInterest,
-      maturityValue,
-      statusStyle
-    };
+// --- Load FD data ---
+const loadFds = async () => {
+  loading.value = true
+  try {
+    const res = await getFds(1) // Replace 1 with dynamic user ID when integrated
+    fds.value = Array.isArray(res.data)
+      ? res.data
+      : Array.isArray(res)
+      ? res
+      : []
+    logger.info('Fetched FDs', { count: fds.value.length })
+  } catch (error) {
+    logger.error('Failed to fetch FDs', error)
+    fds.value = []
+  } finally {
+    loading.value = false
   }
-};
+}
+
+// --- UI Helpers ---
+const toggle = (id) => {
+  expandedId.value = expandedId.value === id ? null : id
+}
+
+const isExpanded = (id) => expandedId.value === id
+
+const formatCurrency = (value) => {
+  const num = Number(value || 0)
+  return num.toLocaleString('en-IN', { maximumFractionDigits: 0 })
+}
+
+const formatDate = (date) => {
+  if (!date) return '—'
+  return new Date(date).toLocaleDateString('en-GB')
+}
+
+const statusStyle = (status) => {
+  const base = {
+    padding: '6px 10px',
+    borderRadius: '14px',
+    fontSize: '12px',
+    fontWeight: 700
+  }
+
+  switch (status) {
+    case 'ACTIVE':
+      return { ...base, background: '#e8f5e9', color: '#2e7d32' }
+    case 'MATURED':
+      return { ...base, background: '#fff3e0', color: '#ef6c00' }
+    case 'BROKEN':
+      return { ...base, background: '#ffebee', color: '#c62828' }
+    default:
+      return { ...base, background: '#f3f4f6', color: '#374151' }
+  }
+}
+
+// --- Navigation ---
+const goToBreakFd = (id) => {
+  router.push(`/break-fd/${id}`)
+}
+
+// --- Lifecycle ---
+onMounted(loadFds)
+
+watch(
+  () => route.query.newFdId,
+  async (id) => {
+    if (id) {
+      await loadFds()
+      expandedId.value = Number(id)
+      setTimeout(() => {
+        const el = document.getElementById(`fd-${id}`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
+    }
+  },
+  { immediate: true }
+)
 </script>
 
 <style scoped>
@@ -156,7 +181,8 @@ export default {
   color: #1a237e;
 }
 
-.loading, .empty {
+.loading,
+.empty {
   text-align: center;
   padding: 18px;
   font-size: 15px;
@@ -248,10 +274,39 @@ export default {
   color: #444;
 }
 
-.fade-enter-active, .fade-leave-active {
+.action-container {
+  margin-top: 20px;
+  text-align: right;
+}
+
+.break-btn {
+  background: #d32f2f;
+  color: #fff;
+  font-weight: 600;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 18px;
+  cursor: pointer;
+  font-size: 14px;
+  transition: background 0.25s ease, transform 0.1s ease;
+}
+
+.break-btn:hover {
+  background: #b71c1c;
+  transform: scale(1.03);
+}
+
+.break-btn:active {
+  transform: scale(0.98);
+}
+
+.fade-enter-active,
+.fade-leave-active {
   transition: all 0.2s ease;
 }
-.fade-enter, .fade-leave-to {
+
+.fade-enter,
+.fade-leave-to {
   opacity: 0;
   transform: translateY(-6px);
 }

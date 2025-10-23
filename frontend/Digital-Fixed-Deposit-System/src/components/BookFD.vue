@@ -1,118 +1,249 @@
 <template>
   <div class="fd-card">
-    <h3>Book FD</h3>
+    <h3 class="fd-title">Book FD</h3>
 
+    <!-- Scheme Selection -->
     <div class="scheme-selection">
-      <div 
-        v-for="scheme in schemes" 
-        :key="scheme.name" 
-        :class="['scheme', { selected: selected?.name === scheme.name }]" 
+      <div
+        v-for="scheme in schemes"
+        :key="scheme.name"
+        :class="['scheme-card', { selected: selected?.name === scheme.name }]"
         @click="selectScheme(scheme)"
       >
-        {{ scheme.name }}
+        <div class="scheme-header">{{ scheme.name }}</div>
+        <div class="scheme-rate">{{ scheme.rate }}% p.a.</div>
       </div>
     </div>
 
+    <!-- FD Input & Details -->
     <div v-if="selected" class="fd-details">
-      <label>Principal Amount:</label>
-      <input type="number" v-model.number="principal" min="1000" />
+      <label for="principal">Principal Amount:</label>
+      <input
+        id="principal"
+        type="number"
+        v-model.number="principal"
+        min="1000"
+        placeholder="Enter amount (min ₹1,000)"
+      />
 
-      <label>Tenure (months):</label>
-      <select v-model.number="tenure">
+      <label for="tenure">Tenure (months):</label>
+      <select id="tenure" v-model.number="tenure">
         <option v-for="t in tenures" :key="t" :value="t">{{ t }}</option>
       </select>
 
-      <p>Total Interest: {{ formatCurrency(totalInterest) }}</p>
-      <p>Maturity Value: {{ formatCurrency(maturityValue) }}</p>
+      <div class="fd-summary">
+        <p><strong>Total Interest:</strong> {{ formatCurrency(totalInterest) }}</p>
+        <p><strong>Maturity Value:</strong> {{ formatCurrency(maturityValue) }}</p>
+      </div>
 
-      <button :disabled="loading" @click="submit">
+      <button
+        class="book-btn"
+        :disabled="loading"
+        @click="submit"
+      >
         {{ loading ? 'Booking...' : 'Book FD' }}
       </button>
     </div>
   </div>
 </template>
 
-<script>
-import { SCHEMES } from '@/constants/schemes.js';
-import { bookFd } from '@/config/api.js';
-import logger from '@/utils/logger.js';
+<script setup>
+import { ref, computed } from 'vue'
+import { useRouter } from 'vue-router'
+import { SCHEMES } from '@/constants/schemes.js'
+import { bookFd } from '@/config/api.js'
+import logger from '@/utils/logger.js'
 
-export default {
-  name: 'BookFD',
-  data() {
-    return {
-      schemes: SCHEMES,
-      selected: null,
-      principal: null,
-      tenure: null,
-      loading: false
-    };
-  },
-  computed: {
-    tenures() {
-      return this.selected 
-        ? Array.from({ length: this.selected.max - this.selected.min + 1 }, (_, i) => i + this.selected.min) 
-        : [];
-    },
-    totalInterest() {
-      if (!this.principal || !this.tenure || !this.selected) return 0;
-      return (this.principal * this.selected.rate * this.tenure) / 1200;
-    },
-    maturityValue() {
-      return (this.principal || 0) + this.totalInterest;
-    }
-  },
-  methods: {
-    selectScheme(scheme) {
-      this.selected = scheme;
-      this.tenure = scheme.min;
-    },
-    formatCurrency(value) {
-      return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(value || 0);
-    },
-    async submit() {
-      if (!this.principal || !this.tenure || !this.selected) {
-        alert('Please fill all details!');
-        return;
-      }
+// --- Router ---
+const router = useRouter()
 
-      const payload = {
-        userId: 1, // replace dynamically if available
-        amount: this.principal,
-        tenureMonths: this.tenure,
-        scheme: this.selected.name,
-        interestRate: this.selected.rate,
-        startDate: new Date().toISOString()
-      };
+// --- Reactive State ---
+const schemes = ref(SCHEMES)
+const selected = ref(null)
+const principal = ref(null)
+const tenure = ref(null)
+const loading = ref(false)
 
-      this.loading = true;
-      try {
-        const res = await bookFd(payload);
-        logger.info('FD booked successfully', payload);
+// --- Computed Properties ---
+const tenures = computed(() => {
+  if (!selected.value) return []
+  const { min, max } = selected.value
+  return Array.from({ length: max - min + 1 }, (_, i) => min + i)
+})
 
-        // Reset form
-        this.principal = null;
-        this.tenure = this.selected.min;
+const totalInterest = computed(() => {
+  if (!principal.value || !tenure.value || !selected.value) return 0
+  return (principal.value * selected.value.rate * tenure.value) / 1200
+})
 
-        // Navigate to FD list and expand newly booked FD
-        this.$router.push({ path: '/fd-list', query: { newFdId: res.id || Date.now() } });
-      } catch (err) {
-        logger.error('Failed to book FD', err, payload);
-        alert('Error booking FD. Check console.');
-      } finally {
-        this.loading = false;
-      }
-    }
+const maturityValue = computed(() => {
+  return (principal.value || 0) + totalInterest.value
+})
+
+// --- Methods ---
+const selectScheme = (scheme) => {
+  selected.value = scheme
+  tenure.value = scheme.min
+}
+
+const formatCurrency = (value) => {
+  return new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR'
+  }).format(value || 0)
+}
+
+const submit = async () => {
+  if (!principal.value || !tenure.value || !selected.value) {
+    alert('Please fill all details!')
+    return
   }
-};
+
+  const payload = {
+    userId: 1, // TODO: Replace dynamically when login integration is done
+    amount: principal.value,
+    tenureMonths: tenure.value,
+    scheme: selected.value.name,
+    interestRate: selected.value.rate,
+    startDate: new Date().toISOString()
+  }
+
+  loading.value = true
+  try {
+    const res = await bookFd(payload)
+    logger.info('FD booked successfully', payload)
+
+    // Reset fields
+    principal.value = null
+    tenure.value = selected.value.min
+
+    router.push({
+      path: '/fd-list',
+      query: { newFdId: res.id || Date.now() }
+    })
+  } catch (error) {
+    logger.error('Failed to book FD', error, payload)
+    alert('Error booking FD. Check console for details.')
+  } finally {
+    loading.value = false
+  }
+}
 </script>
 
 <style scoped>
-.fd-card { width: 420px; padding: 16px; background: #fff; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.08); margin: 0 auto; }
-.scheme-selection { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
-.scheme { padding: 8px; background: #f0f0f0; border-radius: 6px; cursor: pointer; text-align: center; }
-.scheme.selected { background: #1890ff; color: #fff; }
-.fd-details label { display: block; margin: 6px 0 2px; }
-.fd-details input, .fd-details select { width: 100%; padding: 6px; margin-bottom: 6px; border-radius: 6px; border: 1px solid #ddd; }
-.fd-details button { width: 100%; background: #1890ff; color: white; padding: 8px 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; }
+/* --- Card Container --- */
+.fd-card {
+  width: 420px;
+  padding: 20px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  margin: 0 auto;
+}
+
+.fd-title {
+  text-align: center;
+  margin-bottom: 16px;
+  font-weight: 600;
+  color: #222;
+}
+
+/* --- Scheme Selection --- */
+.scheme-selection {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.scheme-card {
+  padding: 12px;
+  background: #f8f9fc;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: center;
+  border: 1px solid #e0e0e0;
+  transition: all 0.25s ease;
+}
+
+.scheme-card:hover {
+  background: #eef5ff;
+  transform: translateY(-2px);
+}
+
+.scheme-card.selected {
+  background: #1890ff;
+  color: #ffffff;
+  border-color: #1890ff;
+  transform: scale(1.03);
+}
+
+.scheme-header {
+  font-weight: 600;
+  font-size: 15px;
+  margin-bottom: 4px;
+}
+
+.scheme-rate {
+  font-size: 14px;
+  font-weight: 500;
+  color: #444;
+}
+
+.scheme-card.selected .scheme-rate {
+  color: #eaf5ff;
+}
+
+/* --- FD Details --- */
+.fd-details label {
+  display: block;
+  margin: 6px 0 2px;
+  font-weight: 500;
+}
+
+.fd-details input,
+.fd-details select {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 1px solid #ddd;
+  font-size: 14px;
+}
+
+.fd-summary {
+  background: #f8faff;
+  padding: 10px;
+  border-radius: 6px;
+  margin-top: 8px;
+}
+
+.fd-summary p {
+  font-size: 14px;
+  margin: 4px 0;
+}
+
+/* --- Button --- */
+.book-btn {
+  width: 100%;
+  background: #1890ff;
+  color: #ffffff;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 10px;
+  transition: background 0.25s ease, transform 0.1s ease;
+}
+
+.book-btn:hover {
+  background: #1765c0;
+  transform: scale(1.02);
+}
+
+.book-btn:disabled {
+  background: #b0c4de;
+  cursor: not-allowed;
+}
 </style>
