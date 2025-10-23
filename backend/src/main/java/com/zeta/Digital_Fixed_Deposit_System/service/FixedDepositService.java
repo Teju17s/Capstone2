@@ -16,8 +16,11 @@ import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.NoSuchElementException;
-import java.util.stream.Collectors;
 
+/**
+ * Service layer for handling Fixed Deposit (FD) operations such as booking,
+ * retrieving, and calculating interest for users.
+ */
 @Service
 public class FixedDepositService {
 
@@ -35,6 +38,9 @@ public class FixedDepositService {
 
     /**
      * Books a new Fixed Deposit for a user.
+     *
+     * @param request details of the FD to be booked
+     * @return the created FixedDeposit entity
      */
     public FixedDeposit bookFixedDeposit(BookFDRequest request) {
         User user = userRepository.findById(request.getUserId())
@@ -59,13 +65,15 @@ public class FixedDepositService {
     }
 
     /**
-     * Retrieves all Fixed Deposits for a specific user.
+     * Retrieves all Fixed Deposits belonging to a specific user.
+     *
+     * @param userId the user’s ID
+     * @return list of FixedDeposits belonging to the user
      */
     public List<FixedDeposit> getFixedDepositsByUser(Long userId) {
-        //return fixedDepositRepository.findByUserUserId(userId);
         List<FixedDeposit> fds = fixedDepositRepository.findByUserUserId(userId);
 
-        // Recalculate accrued interest dynamically
+        // Dynamically recalculate accrued interest before returning
         fds.forEach(fd -> fd.setAccruedInterest(calculateAccruedInterest(fd)));
 
         return fds;
@@ -73,25 +81,65 @@ public class FixedDepositService {
 
     /**
      * Calculates accrued interest for a given Fixed Deposit (simple daily interest).
+     * Accrual stops on:
+     * <ul>
+     *     <li>the current date, if ACTIVE</li>
+     *     <li>the broken date, if BROKEN</li>
+     *     <li>the maturity date, if MATURED</li>
+     * </ul>
+     *
+     * @param fd the Fixed Deposit entity
+     * @return accrued interest as BigDecimal
      */
     public BigDecimal calculateAccruedInterest(FixedDeposit fd) {
+        if (fd == null || fd.getAmount() == null || fd.getInterestRate() == null) {
+            return BigDecimal.ZERO;
+        }
+
         LocalDate startDate = fd.getStartDate() != null ? fd.getStartDate() : LocalDate.now();
-        LocalDate today = LocalDate.now();
-        long daysElapsed = ChronoUnit.DAYS.between(startDate, today);
+        LocalDate endDate = determineAccrualEndDate(fd);
+
+        if (endDate.isBefore(startDate)) {
+            return BigDecimal.ZERO;
+        }
+
+        long daysElapsed = ChronoUnit.DAYS.between(startDate, endDate);
 
         BigDecimal principal = fd.getAmount();
-        BigDecimal annualRate = fd.getInterestRate().divide(BigDecimal.valueOf(100), MATH_CONTEXT);
+        BigDecimal annualRate = fd.getInterestRate()
+                .divide(BigDecimal.valueOf(100), MATH_CONTEXT);
 
         BigDecimal accrued = principal
                 .multiply(annualRate)
                 .multiply(BigDecimal.valueOf(daysElapsed))
                 .divide(BigDecimal.valueOf(365), DISPLAY_SCALE, RoundingMode.HALF_UP);
 
-        return accrued;
+        // Ensure no negative or invalid interest is returned
+        return accrued.max(BigDecimal.ZERO);
     }
 
     /**
-     * Returns the interest rate for a given FD scheme.
+     * Determines the end date for interest accrual based on FD status.
+     *
+     * @param fd the Fixed Deposit entity
+     * @return the appropriate end date for interest calculation
+     */
+    private LocalDate determineAccrualEndDate(FixedDeposit fd) {
+        LocalDate today = LocalDate.now();
+
+        return switch (fd.getStatus()) {
+            case ACTIVE -> today;
+            case BROKEN -> fd.getBrokenDate() != null ? fd.getBrokenDate() : today;
+            case MATURED -> fd.getMaturityDate() != null ? fd.getMaturityDate() : today;
+            default -> today;
+        };
+    }
+
+    /**
+     * Returns the applicable interest rate for a given FD scheme.
+     *
+     * @param scheme name of the FD scheme
+     * @return interest rate as BigDecimal
      */
     private BigDecimal getRateForScheme(String scheme) {
         return switch (scheme) {

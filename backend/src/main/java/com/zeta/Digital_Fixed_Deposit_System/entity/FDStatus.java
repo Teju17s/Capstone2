@@ -17,5 +17,5 @@ public enum FDStatus {
     /**
      * Fixed deposit has been closed/withdrawn by user
      */
-    CLOSED
+    BROKEN
 }

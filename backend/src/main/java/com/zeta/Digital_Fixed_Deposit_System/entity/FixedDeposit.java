@@ -9,6 +9,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 
+/**
+ * Entity representing a user's Fixed Deposit (FD).
+ * Tracks deposit details, interest, and lifecycle states (Active, Broken, Matured).
+ */
 @Entity
 @Table(name = "fixed_deposit")
 @Data
@@ -40,10 +44,9 @@ public class FixedDeposit {
     @Column(nullable = false)
     private LocalDate maturityDate;
 
-    @Column(nullable = false)
     @Enumerated(EnumType.STRING)
-    private FDStatus status; // ✅ Enum for status
-
+    @Column(nullable = false)
+    private FDStatus status; // ACTIVE, BROKEN, MATURED
 
     @Column(name = "scheme", nullable = false)
     private String scheme;
@@ -53,6 +56,10 @@ public class FixedDeposit {
 
     @Column(name = "created_at")
     private LocalDateTime createdAt;
+
+    // ✅ New field for when FD is broken prematurely
+    @Column(name = "broken_date")
+    private LocalDate brokenDate;
 
     @PrePersist
     protected void onCreate() {
