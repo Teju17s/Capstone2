@@ -1,12 +1,19 @@
+
+
+
+
 import axios from 'axios';
 import logger from '../utils/logger.js';
 
+// API configuration
 const API_CONFIG = {
-    BASE_URL: import.meta.env.VITE_API_BASE_URL || 'http://localhost:8084/api',
-    TIMEOUT: 10000
+    BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:8084/api',
+
+    //BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:8084',
+    TIMEOUT: 10000 // 10 seconds
 };
 
-// Axios instance
+// Create axios instance
 const API = axios.create({
     baseURL: API_CONFIG.BASE_URL,
     timeout: API_CONFIG.TIMEOUT
@@ -37,7 +44,7 @@ API.interceptors.response.use(
             url: response.config?.url,
             data: response.data
         });
-        return response.data; // return only data
+        return response.data; // return only data for cleaner usage
     },
     error => {
         logger.logApiError(error.config?.url || 'Unknown endpoint', error);
@@ -49,110 +56,10 @@ API.interceptors.response.use(
 export const bookFd = (payload) => API.post('/fd/book', payload);
 export const getFds = (userId) => API.get(`/fd/user/${userId}`);
 
+// Export config & instance if needed elsewhere
+export { API_CONFIG, API };
+
 export default API;
-export { API_CONFIG };
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// import axios from 'axios';
-// import logger from '../utils/logger.js';
-
-// // API configuration
-// const API_CONFIG = {
-//     BASE_URL: import.meta.env.VITE_API_URL || 'http://localhost:8084',
-//     TIMEOUT: 10000 // 10 seconds
-// };
-
-// // Create axios instance
-// const API = axios.create({
-//     baseURL: API_CONFIG.BASE_URL,
-//     timeout: API_CONFIG.TIMEOUT
-// });
-
-// // Request interceptor
-// API.interceptors.request.use(
-//     config => {
-//         logger.debug('API Request', {
-//             method: config.method?.toUpperCase(),
-//             url: config.url,
-//             params: config.params,
-//             data: config.data
-//         });
-//         return config;
-//     },
-//     error => {
-//         logger.error('API Request Error', error);
-//         return Promise.reject(error);
-//     }
-// );
-
-// // Response interceptor
-// API.interceptors.response.use(
-//     response => {
-//         logger.debug('API Response', {
-//             status: response.status,
-//             url: response.config?.url,
-//             data: response.data
-//         });
-//         return response.data; // return only data for cleaner usage
-//     },
-//     error => {
-//         logger.logApiError(error.config?.url || 'Unknown endpoint', error);
-//         return Promise.reject(error);
-//     }
-// );
-
-// // API calls
-// export const bookFd = (payload) => API.post('/fd/book', payload);
-// export const getFds = (userId) => API.get(`/fd/user/${userId}`);
-
-// // Export config & instance if needed elsewhere
-// export { API_CONFIG, API };
-
-// export default API;
-
-
-
-
 
 
 
