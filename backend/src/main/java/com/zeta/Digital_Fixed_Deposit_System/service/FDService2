@@ -1,0 +1,137 @@
+package com.zeta.Digital_Fixed_Deposit_System.service;
+
+import com.zeta.Digital_Fixed_Deposit_System.dto.BookFDRequest;
+import com.zeta.Digital_Fixed_Deposit_System.entity.FDStatus;
+import com.zeta.Digital_Fixed_Deposit_System.entity.FixedDeposit;
+import com.zeta.Digital_Fixed_Deposit_System.entity.User;
+import com.zeta.Digital_Fixed_Deposit_System.repository.FixedDepositRepository;
+import com.zeta.Digital_Fixed_Deposit_System.repository.UserRepository;
+import org.springframework.stereotype.Service;
+
+import java.math.BigDecimal;
+import java.math.MathContext;
+import java.math.RoundingMode;
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
+import java.util.List;
+import java.util.NoSuchElementException;
+
+@Service
+public class FixedDepositService {
+
+    private final FixedDepositRepository fixedDepositRepository;
+    private final UserRepository userRepository;
+
+    private static final MathContext MATH_CONTEXT = new MathContext(12);
+    private static final int DISPLAY_SCALE = 2;
+
+    public FixedDepositService(FixedDepositRepository fixedDepositRepository,
+                               UserRepository userRepository) {
+        this.fixedDepositRepository = fixedDepositRepository;
+        this.userRepository = userRepository;
+    }
+
+    /**
+     * Books a new Fixed Deposit for a user.
+     */
+    public FixedDeposit bookFixedDeposit(BookFDRequest request) {
+        User user = userRepository.findById(request.getUserId())
+                .orElseThrow(() -> new NoSuchElementException("User not found"));
+
+        FixedDeposit fd = new FixedDeposit();
+        fd.setUser(user);
+        fd.setAmount(request.getAmount());
+        fd.setInterestRate(getRateForScheme(request.getScheme()));
+        fd.setScheme(request.getScheme());
+        fd.setTenureMonths(request.getTenureMonths());
+
+        LocalDate startDate = LocalDate.now();
+        fd.setStartDate(startDate);
+        fd.setMaturityDate(startDate.plusMonths(request.getTenureMonths()));
+
+        fd.setStatus(FDStatus.ACTIVE);
+        fd.setCreatedAt(LocalDateTime.now());
+        fd.setAccruedInterest(calculateAccruedInterest(fd));
+
+        return fixedDepositRepository.save(fd);
+    }
+
+    /**
+     * Retrieves all Fixed Deposits for a specific user.
+     * Dynamically recalculates interest based on current status.
+     */
+    public List<FixedDeposit> getFixedDepositsByUser(Long userId) {
+        List<FixedDeposit> fds = fixedDepositRepository.findByUserUserId(userId);
+        fds.forEach(fd -> fd.setAccruedInterest(calculateAccruedInterest(fd)));
+        return fds;
+    }
+
+    /**
+     * Calculates accrued interest for a given Fixed Deposit.
+     * - ACTIVE: till today
+     * - MATURED: till maturity date
+     * - BROKEN: till closedAt date
+     */
+    public BigDecimal calculateAccruedInterest(FixedDeposit fd) {
+        if (fd.getStartDate() == null || fd.getAmount() == null || fd.getInterestRate() == null) {
+            return BigDecimal.ZERO;
+        }
+
+        LocalDate startDate = fd.getStartDate();
+        LocalDate endDate;
+
+        // Decide end date based on FD status
+        if (fd.getStatus() == FDStatus.MATURED && fd.getMaturityDate() != null) {
+            endDate = fd.getMaturityDate();
+        } else if (fd.getStatus() == FDStatus.BROKEN && fd.getClosedAt() != null) {
+            endDate = fd.getClosedAt().toLocalDate();
+        } else {
+            endDate = LocalDate.now(); // default for ACTIVE
+        }
+
+        long daysElapsed = ChronoUnit.DAYS.between(startDate, endDate);
+        if (daysElapsed < 0) daysElapsed = 0; // safety check
+
+        BigDecimal principal = fd.getAmount();
+        BigDecimal annualRate = fd.getInterestRate().divide(BigDecimal.valueOf(100), MATH_CONTEXT);
+
+        BigDecimal accrued = principal
+                .multiply(annualRate)
+                .multiply(BigDecimal.valueOf(daysElapsed))
+                .divide(BigDecimal.valueOf(365), DISPLAY_SCALE, RoundingMode.HALF_UP);
+
+        return accrued;
+    }
+
+    /**
+     * Returns the interest rate for a given FD scheme.
+     */
+    private BigDecimal getRateForScheme(String scheme) {
+        return switch (scheme) {
+            case "Regular Saver" -> BigDecimal.valueOf(6.5);
+            case "Premium Saver" -> BigDecimal.valueOf(7.0);
+            case "Longterm Growth" -> BigDecimal.valueOf(7.5);
+            case "Tax Saver" -> BigDecimal.valueOf(7.2);
+            default -> BigDecimal.valueOf(6.5);
+        };
+    }
+
+    /**
+     * Closes an FD prematurely (Broken FD).
+     */
+    public FixedDeposit closeFixedDeposit(Long fdId) {
+        FixedDeposit fd = fixedDepositRepository.findById(fdId)
+                .orElseThrow(() -> new NoSuchElementException("Fixed Deposit not found"));
+
+        if (fd.getStatus() == FDStatus.BROKEN || fd.getStatus() == FDStatus.MATURED) {
+            throw new IllegalStateException("FD is already closed or matured.");
+        }
+
+        fd.setStatus(FDStatus.BROKEN);
+        fd.setClosedAt(LocalDateTime.now());
+        fd.setAccruedInterest(calculateAccruedInterest(fd));
+
+        return fixedDepositRepository.save(fd);
+    }
+}
